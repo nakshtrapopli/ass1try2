@@ -1,0 +1,70 @@
+import grpc
+from concurrent import futures
+import inventory_pb2
+import inventory_pb2_grpc
+
+class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
+    def __init__(self):
+        self.inventory_data = {
+            "IN0001": {
+                "id": "IN0001",
+                "name": "Item 1",
+                "description": "Desc 1",
+                "unit_price": 51.00,
+                "quantity_in_stock": 25,
+                "inventory_value": 1275.00,
+                "reorder_level": 29,
+                "reorder_time_in_days": 13,
+                "quantity_in_reorder": 50,
+                "discontinued": False
+            }, 
+            "IN0002": {
+                "id": "IN0002",
+                "name": "Item 2",
+                "description": "Desc 2",
+                "unit_price": 93.00,
+                "quantity_in_stock": 132,
+                "inventory_value": 12276.00,
+                "reorder_level": 231,
+                "reorder_time_in_days": 4,
+                "quantity_in_reorder": 50,
+                "discontinued": False
+            }
+        }
+
+    def getDistribution(self, request, context):
+        key_name = request.key_name
+        percentile = request.percentile
+
+        # Check if the key_name is valid and exists in the data
+        if key_name not in ["unit_price", "quantity_in_stock", "inventory_value", "reorder_level", "reorder_time_in_days", "quantity_in_reorder"]:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("Invalid key_name")
+            return inventory_pb2.PercentileResponse(value=None)
+
+        # Extract the list of values corresponding to the key_name
+        values = [record[key_name] for record in self.inventory_data.values() if key_name in record]
+
+        # Check if there are values to calculate the percentile
+        if not values:
+            context.set_code(grpc.StatusCode.NOT_FOUND)
+            context.set_details(f"No values found for key_name: {key_name}")
+            return inventory_pb2.PercentileResponse(value=None)
+
+        # Calculate the percentile
+        values.sort()
+        index = int(percentile * len(values) / 100)
+        percentile_value = values[index - 1]
+
+        # Return the calculated percentile value
+        return inventory_pb2.PercentileResponse(value=percentile_value)
+
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    inventory_pb2_grpc.add_InventoryServiceServicer_to_server(InventoryServicer(), server)
+    server.add_insecure_port('[::]:50051')
+    server.start()
+    server.wait_for_termination()
+
+if __name__ == '__main__':
+    serve()
